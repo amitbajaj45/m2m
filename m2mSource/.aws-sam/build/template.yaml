@@ -1,0 +1,328 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: M2M Source Environment
+Parameters:
+  KeyName:
+    Description: Name of the EC2 KeyPair to enable SSH access to the instances
+    Type: String
+    Default: m2m.sourcekey
+Resources:
+  SourceEnvVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Environment
+        Value: source
+      - Key: Name
+        Value: m2m.source
+  SourceEnvSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: SourceEnvVPC
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs: ''
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+      - Key: Environment
+        Value: source
+      - Key: Name
+        Value: m2m.source
+  SourceEnvSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: SourceEnvVPC
+      AvailabilityZone:
+        Fn::Select:
+        - 1
+        - Fn::GetAZs: ''
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: 'true'
+      Tags:
+      - Key: Environment
+        Value: source
+      - Key: Name
+        Value: m2m.source
+  petStoreSG:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+    - SourceEnvSubnet
+    Properties:
+      GroupName: petStoreSG
+      GroupDescription: Pet Store App SG
+      VpcId:
+        Ref: SourceEnvVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Environment
+        Value: source
+      - Key: Name
+        Value: m2m.source
+  petStoreIngress1:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn:
+    - petStoreSG
+    Properties:
+      IpProtocol: tcp
+      ToPort: 8080
+      FromPort: 8080
+      CidrIp: 0.0.0.0/0
+      GroupId:
+        Ref: petStoreSG
+  petStoreIngress2:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn:
+    - petStoreSG
+    Properties:
+      IpProtocol: tcp
+      ToPort: 9990
+      FromPort: 9990
+      CidrIp: 0.0.0.0/0
+      GroupId:
+        Ref: petStoreSG
+  m2mSourceGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Environment
+        Value: source
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn:
+    - SourceEnvVPC
+    Properties:
+      VpcId:
+        Ref: SourceEnvVPC
+      InternetGatewayId:
+        Ref: m2mSourceGateway
+  SourceEnvRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn:
+    - SourceEnvVPC
+    - SourceEnvSubnet
+    Properties:
+      VpcId:
+        Ref: SourceEnvVPC
+      Tags:
+      - Key: Environment
+        Value: source
+  SourceEnvRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+    - SourceEnvSubnet
+    - SourceEnvRouteTable
+    Properties:
+      SubnetId:
+        Ref: SourceEnvSubnet
+      RouteTableId:
+        Ref: SourceEnvRouteTable
+  SourceEnvAllRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+    - SourceEnvRouteTable
+    Properties:
+      RouteTableId:
+        Ref: SourceEnvRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: m2mSourceGateway
+  petStoreApp:
+    Type: AWS::EC2::Instance
+    DependsOn:
+    - SSHKeyGeneratorExecution
+    Properties:
+      InstanceType: t2.small
+      SecurityGroupIds:
+      - Ref: petStoreSG
+      SubnetId:
+        Ref: SourceEnvSubnet
+      KeyName:
+        Ref: KeyName
+      ImageId: ami-003634241a8fcdec0
+      BlockDeviceMappings:
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeSize: 16
+      Monitoring: true
+      IamInstanceProfile:
+        Ref: EC2InstanceProfile
+      UserData:
+        Fn::Base64:
+          Fn::Sub: '#!/bin/bash
+
+            sudo apt-get update
+
+            sudo apt-get install default-jdk -y
+
+            sudo groupadd -r wildfly
+
+            sudo useradd -r -g wildfly -d /opt/wildfly -s /sbin/nologin wildfly
+
+            Version_Number=11.0.0.Final
+
+            wget https://download.jboss.org/wildfly/$Version_Number/wildfly-$Version_Number.tar.gz
+            -P /tmp
+
+            sudo tar xf /tmp/wildfly-$Version_Number.tar.gz -C /opt/
+
+            sudo ln -s /opt/wildfly-$Version_Number /opt/wildfly
+
+            sudo chown -RH wildfly: /opt/wildfly
+
+            sudo mkdir -p /etc/wildfly
+
+            sudo cp /opt/wildfly/docs/contrib/scripts/systemd/wildfly.conf /etc/wildfly/
+
+            sudo cp /opt/wildfly/docs/contrib/scripts/systemd/launch.sh /opt/wildfly/bin/
+
+            sudo sh -c ''chmod +x /opt/wildfly/bin/*.sh''
+
+            sudo cp /opt/wildfly/docs/contrib/scripts/systemd/wildfly.service /etc/systemd/system/
+
+            sudo systemctl daemon-reload
+
+            sudo systemctl start wildfly
+
+            sudo systemctl status wildfly
+
+            sudo systemctl enable wildfly
+
+            sudo ufw allow 8080/tcp
+
+            sudo /opt/wildfly/bin/add-user.sh  -u ''admin-user10'' -p ''password10''
+
+            sudo su -c ''echo -e "\n# The address console to bind to\nWILDFLY_CONSOLE_BIND=0.0.0.0"
+            >> /etc/wildfly/wildfly.conf''
+
+            sudo sed -i ''s/\-c \$2 \-b \$3/\-c \$2 \-b \$3 \-bmanagement \$4/'' /opt/wildfly/bin/launch.sh
+
+            sudo systemctl restart wildfly
+
+            sudo sed -i ''s/\$WILDFLY_BIND/\$WILDFLY_BIND \$WILDFLY_CONSOLE_BIND/''
+            /etc/systemd/system/wildfly.service
+
+            sudo systemctl daemon-reload
+
+            sudo systemctl restart wildfly
+
+            sudo wget https://m2m-sourceapp-artifacts.s3-us-west-2.amazonaws.com/applicationPetstore.war
+            -P /opt/wildfly/standalone/deployments/
+
+            '
+      Tags:
+      - Key: Environment
+        Value: source
+      - Key: Name
+        Value: m2m.source-app
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+  SSHKeyGenerator:
+    Type: AWS::Serverless::Function
+    Properties:
+      Timeout: 60
+      Runtime: python3.8
+      Handler: generate_ssh_key.lambda_handler
+      Role:
+        Fn::GetAtt:
+        - SSHKeyGeneratorRole
+        - Arn
+      CodeUri: SSHKeyGenerator
+  SSHKeyGeneratorExecution:
+    Type: Custom::SSHKeyGenerator
+    DependsOn:
+    - SSHKeyGenerator
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - SSHKeyGenerator
+        - Arn
+  SSHKeyGeneratorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - ssm:*
+            - ec2:*
+            Resource: '*'
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+      - Ref: EC2InstanceRole
+  SSMPetStoreAppManagementURL:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: m2m.source.ManagementURL
+      Type: String
+      Value:
+        Fn::Sub: http://${petStoreApp.PublicDnsName}:9990/console
+  SSMPetStoreAppManagementUser:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: m2m.source.ManagementUser
+      Type: String
+      Value: admin-user10
+  SSMPetStoreAppManagementPassword:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: m2m.source.ManagementPassword
+      Type: String
+      Value: password10
+Outputs:
+  petStoreDNSName:
+    Description: The pet store DNS Name
+    Value:
+      Fn::GetAtt:
+      - petStoreApp
+      - PublicDnsName
+  petStoreURL:
+    Description: The pet store URL
+    Value:
+      Fn::Sub: http://${petStoreApp.PublicDnsName}:8080/applicationPetstore
+  petStoreAppManagementURL:
+    Description: The pet store URL
+    Value:
+      Fn::Sub: http://${petStoreApp.PublicDnsName}:9990/console
