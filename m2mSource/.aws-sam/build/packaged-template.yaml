@@ -6,6 +6,18 @@ Parameters:
     Description: Name of the EC2 KeyPair to enable SSH access to the instances
     Type: String
     Default: m2m.sourcekey
+  DBName:
+    Description: Name of the database which will be username and password as well
+    Type: String
+    Default: petstoredb
+Mappings:
+  RegionMap:
+    us-east-1:
+      HVM64: ami-0ac80df6eff0e70b5
+    us-west-1:
+      HVM64: ami-0d705db840ec5f0c5
+    us-west-2:
+      HVM64: ami-003634241a8fcdec0
 Resources:
   SourceEnvVPC:
     Type: AWS::EC2::VPC
@@ -91,6 +103,36 @@ Resources:
       CidrIp: 0.0.0.0/0
       GroupId:
         Ref: petStoreSG
+  petStoreDBSG:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+    - SourceEnvSubnet
+    Properties:
+      GroupName: petStoreDBSG
+      GroupDescription: Pet Store App DB SG
+      VpcId:
+        Ref: SourceEnvVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Environment
+        Value: source
+      - Key: Name
+        Value: mm2m.source-db
+  petStoreDBIngress1:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn:
+    - petStoreDBSG
+    Properties:
+      IpProtocol: tcp
+      ToPort: 5432
+      FromPort: 5432
+      CidrIp: 0.0.0.0/0
+      GroupId:
+        Ref: petStoreDBSG
   m2mSourceGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -141,6 +183,7 @@ Resources:
     Type: AWS::EC2::Instance
     DependsOn:
     - SSHKeyGeneratorExecution
+    - petStoreDB
     Properties:
       InstanceType: t2.small
       SecurityGroupIds:
@@ -149,7 +192,11 @@ Resources:
         Ref: SourceEnvSubnet
       KeyName:
         Ref: KeyName
-      ImageId: ami-003634241a8fcdec0
+      ImageId:
+        Fn::FindInMap:
+        - RegionMap
+        - Ref: AWS::Region
+        - HVM64
       BlockDeviceMappings:
       - DeviceName: /dev/xvda
         Ebs:
@@ -194,8 +241,6 @@ Resources:
 
             sudo systemctl start wildfly
 
-            sudo systemctl status wildfly
-
             sudo systemctl enable wildfly
 
             sudo ufw allow 8080/tcp
@@ -219,6 +264,60 @@ Resources:
             sudo wget https://m2m-sourceapp-artifacts.s3-us-west-2.amazonaws.com/applicationPetstore.war
             -P /opt/wildfly/standalone/deployments/
 
+            sudo mkdir -p /opt/wildfly/modules/system/layers/base/org/postgresql/main
+
+            sudo wget https://m2m-sourceapp-artifacts.s3-us-west-2.amazonaws.com/postgresql/module.xml
+            -P /opt/wildfly/modules/system/layers/base/org/postgresql/main
+
+            sudo wget https://m2m-sourceapp-artifacts.s3-us-west-2.amazonaws.com/postgresql/postgresql-42.2.1.jre7.jar
+            -P /opt/wildfly/modules/system/layers/base/org/postgresql/main
+
+            sleep 20
+
+            cd /opt/wildfly/bin/
+
+            ./jboss-cli.sh --connect --user="admin-user10" --password="password10"
+            --command="/subsystem=datasources/jdbc-driver=postgresql:add(driver-name=postgresql,driver-module-name=org.postgresql,
+            driver-class-name=org.postgresql.Driver)"
+
+            ./jboss-cli.sh --connect --user="admin-user10" --password="password10"
+            --command="data-source remove --name=ExampleDS"
+
+            ./jboss-cli.sh --connect --user="admin-user10" --password="password10"
+            --command=":reload"
+
+            ./jboss-cli.sh --connect --user="admin-user10" --password="password10"
+            --command="data-source add \
+
+            --name=ExampleDS \
+
+            --driver-name=postgresql \
+
+            --connection-url=jdbc:postgresql://${petStoreDB.PublicDnsName}:5432/${DBName}
+            \
+
+            --jndi-name=java:jboss/datasources/ExampleDS \
+
+            --user-name=${DBName} \
+
+            --password=${DBName} \
+
+            --use-ccm=false \
+
+            --max-pool-size=25 \
+
+            --blocking-timeout-wait-millis=5000 \
+
+            --new-connection-sql=\"set datestyle = ISO, European;\""
+
+            ./jboss-cli.sh --connect --user="admin-user10" --password="password10"
+            --command="data-source enable --name=ExampleDS"
+
+            ./jboss-cli.sh --connect --user="admin-user10" --password="password10"
+            --command=":reload"
+
+            sudo systemctl restart wildfly
+
             '
       Tags:
       - Key: Environment
@@ -240,6 +339,65 @@ Resources:
           - sts:AssumeRole
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+  petStoreDB:
+    Type: AWS::EC2::Instance
+    DependsOn:
+    - SSHKeyGeneratorExecution
+    Properties:
+      InstanceType: t2.small
+      SecurityGroupIds:
+      - Ref: petStoreDBSG
+      SubnetId:
+        Ref: SourceEnvSubnet
+      KeyName:
+        Ref: KeyName
+      ImageId:
+        Fn::FindInMap:
+        - RegionMap
+        - Ref: AWS::Region
+        - HVM64
+      BlockDeviceMappings:
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeSize: 16
+      Monitoring: true
+      IamInstanceProfile:
+        Ref: EC2InstanceProfile
+      UserData:
+        Fn::Base64:
+          Fn::Sub: '#!/bin/bash
+
+            sudo apt update -y
+
+            sudo apt install postgresql postgresql-contrib -y
+
+            sleep 10
+
+            sudo sed -i "s/#listen_addresses = ''localhost''/listen_addresses = ''*''/"
+            /etc/postgresql/10/main/postgresql.conf
+
+            sudo su -c ''echo -e "\nhost\tall\t\tall\t\t0.0.0.0/0\t\tmd5" >> /etc/postgresql/10/main/pg_hba.conf''
+
+            sudo groupadd -r ${DBName}
+
+            sudo useradd -r -g ${DBName} -d /opt/${DBName} -s /sbin/nologin ${DBName}
+
+            sudo -u postgres psql -c "CREATE DATABASE ${DBName};"
+
+            sudo -u postgres psql -c "Create user ${DBName} with encrypted password
+            ''${DBName}'';"
+
+            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${DBName} TO
+            ${DBName};"
+
+            sudo systemctl restart postgresql
+
+            '
+      Tags:
+      - Key: Environment
+        Value: source
+      - Key: Name
+        Value: m2m.source-db
   SSHKeyGenerator:
     Type: AWS::Serverless::Function
     Properties:
@@ -250,7 +408,7 @@ Resources:
         Fn::GetAtt:
         - SSHKeyGeneratorRole
         - Arn
-      CodeUri: s3://m2m-sourceapp-artifacts/7f15f5d9bade4517db337756c58e4003
+      CodeUri: s3://m2m-sam-artifacts-us-west-2/7f15f5d9bade4517db337756c58e4003
   SSHKeyGeneratorExecution:
     Type: Custom::SSHKeyGenerator
     DependsOn:
@@ -311,12 +469,39 @@ Resources:
       Name: m2m.source.ManagementPassword
       Type: String
       Value: password10
+  SSMPetStoreAppDBName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: m2m.source.DBName
+      Type: String
+      Value:
+        Ref: DBName
+  SSMPetStoreAppDBUser:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: m2m.source.DBUser
+      Type: String
+      Value:
+        Ref: DBName
+  SSMPetStoreAppDBPassword:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: m2m.source.DBPassword
+      Type: String
+      Value:
+        Ref: DBName
 Outputs:
-  petStoreDNSName:
-    Description: The pet store DNS Name
+  petStoreAppDNSName:
+    Description: The pet store App DNS Name
     Value:
       Fn::GetAtt:
       - petStoreApp
+      - PublicDnsName
+  petStoreDBDNSName:
+    Description: The pet store DB DNS Name
+    Value:
+      Fn::GetAtt:
+      - petStoreDB
       - PublicDnsName
   petStoreURL:
     Description: The pet store URL
