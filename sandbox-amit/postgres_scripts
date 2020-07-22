@@ -1,0 +1,21 @@
+#!/bin/bash
+            sudo apt update -y
+            sudo apt install postgresql postgresql-contrib -y
+            sleep 10
+            sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/10/main/postgresql.conf
+            sudo su -c 'echo -e "\nhost\tall\t\tall\t\t0.0.0.0/0\t\tmd5" >> /etc/postgresql/10/main/pg_hba.conf'
+            sudo groupadd -r ${DBName}
+            sudo useradd -r -g ${DBName} -d /opt/${DBName} -s /sbin/nologin ${DBName}
+            sudo -u postgres psql -c "CREATE DATABASE ${DBName};"
+            sudo -u postgres psql -c "Create user ${DBName} with encrypted password '${DBName}';"
+            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${DBName} TO ${DBName};"
+            sudo systemctl restart postgresql
+
+
+
+
+
+
+
+
+
