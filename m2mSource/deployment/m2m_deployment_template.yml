@@ -408,7 +408,7 @@ Resources:
         Fn::GetAtt:
         - SSHKeyGeneratorRole
         - Arn
-      CodeUri: s3://m2m-sam-artifacts-us-west-2/7f15f5d9bade4517db337756c58e4003
+      CodeUri: s3://m2m-project-artifacts/40cece4d63ebac9d7f3a4514c8c6ec60
   SSHKeyGeneratorExecution:
     Type: Custom::SSHKeyGenerator
     DependsOn:
