@@ -10,6 +10,35 @@ Parameters:
     Description: Name of the database which will be username and password as well
     Type: String
     Default: petstoredb
+  C9InstanceType:
+    Description: The instance type of the new Amazon EC2 instance that AWS Cloud9
+      will launch for the development environment (for example, 't2.micro').
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+    - t2.micro
+    - t2.small
+    - m4.large
+    - t2.nano
+    - c4.large
+    - t2.medium
+    - t2.large
+    - m4.xlarge
+    - t2.xlarge
+    - c4.xlarge
+    - c4.2xlarge
+    - m4.2xlarge
+    - t2.2xlarge
+    - c4.4xlarge
+    - m4.4xlarge
+    - c4.8xlarge
+    - m4.10xlarge
+    - m4.16xlarge
+  C9StopTime:
+    Description: The number of minutes until the running instance is shut down after
+      the environment has last been used.
+    Type: Number
+    Default: 30
 Mappings:
   RegionMap:
     us-east-1:
@@ -408,7 +437,7 @@ Resources:
         Fn::GetAtt:
         - SSHKeyGeneratorRole
         - Arn
-      CodeUri: s3://m2m-project-artifacts/40cece4d63ebac9d7f3a4514c8c6ec60
+      CodeUri: s3://m2m-project-artifacts/e28eb521027d8aaf7fcadab65746f8b0
   SSHKeyGeneratorExecution:
     Type: Custom::SSHKeyGenerator
     DependsOn:
@@ -490,6 +519,18 @@ Resources:
       Type: String
       Value:
         Ref: DBName
+  C9Instance:
+    Type: AWS::Cloud9::EnvironmentEC2
+    Properties:
+      Name:
+        Ref: AWS::StackName
+      Description: Cloud-based IDE for AWS Modernization Workshop
+      AutomaticStopTimeMinutes:
+        Ref: C9StopTime
+      InstanceType:
+        Ref: C9InstanceType
+      SubnetId:
+        Ref: SourceEnvSubnet
 Outputs:
   petStoreAppDNSName:
     Description: The pet store App DNS Name
@@ -511,3 +552,7 @@ Outputs:
     Description: The pet store URL
     Value:
       Fn::Sub: http://${petStoreApp.PublicDnsName}:9990/console
+  C9Instance:
+    Description: Cloud9 Instance Name
+    Value:
+      Ref: C9Instance

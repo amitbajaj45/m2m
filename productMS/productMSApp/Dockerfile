@@ -3,6 +3,10 @@ FROM maven:3.5-jdk-8 AS build
 # set the working directory
 WORKDIR /usr/src/app
 
+# Define arguments for DB
+#ENV db_host
+#ENV db_name
+
 # copy just the pom.xml
 COPY ./app/pom.xml /usr/src/app/pom.xml
 
@@ -48,12 +52,12 @@ COPY ./docker-entrypoint.sh /opt/jboss/docker-entrypoint.sh
 # expose the application port and the management port
 EXPOSE 8080 9990
 
-ENV DB_URL jdbc:postgresql://productMicroDBELB-521e8572997f3ec3.elb.us-east-1.amazonaws.com:5432/productms?ApplicationName=productMicroService
-ENV DB_HOST productMicroDBELB-521e8572997f3ec3.elb.us-east-1.amazonaws.com
-ENV DB_PORT 5432
-ENV DB_NAME productms
-ENV DB_USER admin
-ENV DB_PASS password
+#ENV DB_URL jdbc:postgresql://${db_host}:5432/${db_host}?ApplicationName=productMicroService
+#ENV DB_HOST ${db_host}
+#ENV DB_PORT 5432
+#ENV DB_NAME ${db_host}
+#ENV DB_USER admin
+#ENV DB_PASS passwOrd
 
 # run the application
 ENTRYPOINT [ "/opt/jboss/docker-entrypoint.sh" ]

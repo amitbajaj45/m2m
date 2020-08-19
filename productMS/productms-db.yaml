@@ -1,0 +1,359 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploys Product micro service as ECS task in AWS Fargate.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: DEV
+    Description: The stage into we deploy this template.
+
+  DBNAME:
+    Type: String
+    Default: productms
+    Description: The name of Product MicroService DB
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: Select a VPC that allows instances to access the Internet.
+  SubnetId:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select at two subnets in your selected VPC.
+Resources:
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Limits security group ingress and egress traffic for the WebSphere MQ instance
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+  DBTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+  productMSDBECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: product-ms-db-cluster
+
+  productMSDBECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: product-ms-db-task
+      Cpu: 2048
+      Memory: 4096
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref DBTaskExecutionRole
+      ContainerDefinitions:
+        - Name: product-ms-db
+          Cpu: 2048
+          Memory: 4096
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/m2m/productmsdb-ubuntu-image:latest'
+          PortMappings:
+            - ContainerPort: 5432
+          Environment:
+            - Name: POSTGRES_DB
+              Value: productms
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: product-ms-db-task
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: cmr/ecs/product-ms-db-cluster
+      RetentionInDays: 30
+
+  productMSDBECSService:
+    Type: AWS::ECS::Service
+    DependsOn: DBListener
+    Properties:
+      ServiceName: product-ms-db
+      Cluster: !Ref productMSDBECSCluster
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref DBSecurityGroup
+          Subnets: !Ref 'SubnetId'
+      TaskDefinition: !Ref productMSDBECSTaskDefinition
+      LoadBalancers:
+        - TargetGroupArn:
+            Ref: DBTG
+          ContainerPort: 5432
+          ContainerName: product-ms-db
+#  EcsSecurityGroup:
+#    Type: AWS::EC2::SecurityGroup
+#    Properties:
+#      GroupDescription: ECS Security Group
+#      VpcId: !Ref VPC
+#  EcsSecurityGroupHTTPinbound:
+#    Type: AWS::EC2::SecurityGroupIngress
+#    Properties:
+#      GroupId: !Ref 'EcsSecurityGroup'
+#      IpProtocol: tcp
+#      FromPort: '5432'
+#      ToPort: '5432'
+#      CidrIp: 0.0.0.0/0
+  DBALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: DBALB
+      Scheme: internet-facing
+      Type: network
+      Subnets: !Ref 'SubnetId'
+  DBServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: ['elasticloadbalancing:DeregisterInstancesFromLoadBalancer', 'elasticloadbalancing:DeregisterTargets',
+                         'elasticloadbalancing:Describe*', 'elasticloadbalancing:RegisterInstancesWithLoadBalancer',
+                         'elasticloadbalancing:RegisterTargets', 'ec2:Describe*', 'ec2:AuthorizeSecurityGroupIngress']
+                Resource: '*'
+  DBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: DBServiceRole
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref 'DBTG'
+      LoadBalancerArn: !Ref 'DBALB'
+      Port: '5432'
+      Protocol: TCP
+#  DBDBListenerRule:
+#    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+#    DependsOn: DBListener
+#    Properties:
+#      Actions:
+#        - Type: forward
+#          TargetGroupArn: !Ref 'DBTG'
+#      ListenerArn: !Ref 'DBListener'
+#      Priority: 1
+  DBTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: DBALB
+    Properties:
+      HealthCheckProtocol: TCP
+      HealthyThresholdCount: 3
+      Name: DBTG
+      Port: 5432
+      Protocol: TCP
+      VpcId: !Ref VPC
+      TargetType: ip
+##################################################
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Limits security group ingress and egress traffic for the product Micro service App
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  AppSecurityIngress1:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn:
+      - AppSecurityGroup
+    Properties:
+      IpProtocol: tcp
+      ToPort: 8080
+      FromPort: 8080
+      CidrIp: 0.0.0.0/0
+      GroupId: !Ref AppSecurityGroup
+  AppTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+  productMSAppECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: product-ms-app-cluster
+
+  productMSAppECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: DBALB
+    Properties:
+      Family: product-ms-app-task
+      Cpu: 2048
+      Memory: 4096
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref AppTaskExecutionRole
+      ContainerDefinitions:
+        - Name: product-ms-app
+          Cpu: 2048
+          Memory: 4096
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/m2m/productmsapp-image:latest'
+          PortMappings:
+            - ContainerPort: 8080
+          Environment:
+            - Name: DB_URL
+              Value: !Sub 'jdbc:postgresql://${DBALB.DNSName}:5432/${DBNAME}?ApplicationName=productMicroService'
+            - Name: DB_HOST
+              Value: !Join ['', [!GetAtt [DBALB, DNSName]]]
+            - Name: DB_PORT
+              Value: 5432
+            - Name: DB_NAME
+              Value: !Ref DBNAME
+            - Name: DB_USER
+              Value: admin
+            - Name: DB_PASS
+              Value: passwOrd
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: product-ms-app-task
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: cmr/ecs/product-ms-app-cluster
+      RetentionInDays: 30
+
+  productMSAppECSService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - AppListener
+      - productMSDBECSService
+    Properties:
+      ServiceName: product-ms-app
+      Cluster: !Ref productMSAppECSCluster
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref AppSecurityGroup
+          Subnets: !Ref 'SubnetId'
+      TaskDefinition: !Ref productMSAppECSTaskDefinition
+      LoadBalancers:
+        - TargetGroupArn:
+            Ref: AppTG
+          ContainerPort: 8080
+          ContainerName: product-ms-app
+#  EcsSecurityGroup:
+#    Type: AWS::EC2::SecurityGroup
+#    Properties:
+#      GroupDescription: ECS Security Group
+#      VpcId: !Ref VPC
+#  EcsSecurityGroupHTTPinbound:
+#    Type: AWS::EC2::SecurityGroupIngress
+#    Properties:
+#      GroupId: !Ref 'EcsSecurityGroup'
+#      IpProtocol: tcp
+#      FromPort: '5432'
+#      ToPort: '5432'
+#      CidrIp: 0.0.0.0/0
+  AppALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: AppALB
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Ref 'SubnetId'
+      SecurityGroups:
+        - !Ref AppSecurityGroup
+  AppServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: ['elasticloadbalancing:DeregisterInstancesFromLoadBalancer', 'elasticloadbalancing:DeregisterTargets',
+                         'elasticloadbalancing:Describe*', 'elasticloadbalancing:RegisterInstancesWithLoadBalancer',
+                         'elasticloadbalancing:RegisterTargets', 'ec2:Describe*', 'ec2:AuthorizeSecurityGroupIngress']
+                Resource: '*'
+  AppListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: AppServiceRole
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref 'AppTG'
+      LoadBalancerArn: !Ref 'AppALB'
+      Port: '8080'
+      Protocol: HTTP
+#  DBDBListenerRule:
+#    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+#    DependsOn: DBListener
+#    Properties:
+#      Actions:
+#        - Type: forward
+#          TargetGroupArn: !Ref 'DBTG'
+#      ListenerArn: !Ref 'DBListener'
+#      Priority: 1
+  AppTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: AppALB
+    Properties:
+      HealthCheckIntervalSeconds: 150
+      HealthCheckPath: "/"
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 120
+      HealthyThresholdCount: 2
+      Name: AppTG
+      Port: 8080
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VPC
+      TargetType: ip
+
+
+
+Outputs:
+  AppLB:
+    Description: Your product Micro Service DNS URL
+    Value: !Join ['', [!GetAtt [AppALB, DNSName]]]

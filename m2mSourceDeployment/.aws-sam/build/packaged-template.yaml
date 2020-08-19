@@ -437,7 +437,7 @@ Resources:
         Fn::GetAtt:
         - SSHKeyGeneratorRole
         - Arn
-      CodeUri: SSHKeyGenerator
+      CodeUri: s3://m2m-sam-artifacts-us-west-2/e28eb521027d8aaf7fcadab65746f8b0
   SSHKeyGeneratorExecution:
     Type: Custom::SSHKeyGenerator
     DependsOn:

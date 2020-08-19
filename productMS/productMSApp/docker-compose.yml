@@ -2,54 +2,17 @@ version: '3.4'
 
 services:
 
-  postgres:
-    image: postgres:9.6
-    ports:
-      - 5432:5432
-    environment:
-      - 'POSTGRES_DB=petstore'
-      - 'POSTGRES_USER=admin'
-      - 'POSTGRES_PASSWORD=password'
-
-  petstore:
+  productmsapp:
     build:
       context: ./
       dockerfile: Dockerfile
-    depends_on:
-      - postgres
     ports:
       - 8080:8080
       - 9990:9990
     environment:
-      - 'DB_URL=jdbc:postgresql://postgres:5432/petstore?ApplicationName=applicationPetstore'
-      - 'DB_HOST=postgres'
+      - 'DB_URL=jdbc:postgresql://DBALB-1b4244899839faea.elb.us-east-1.amazonaws.com:5432/productms?ApplicationName=productMicroService'
+      - 'DB_HOST=DBALB-1b4244899839faea.elb.us-east-1.amazonaws.com'
       - 'DB_PORT=5432'
-      - 'DB_NAME=petstore'
+      - 'DB_NAME=productms'
       - 'DB_USER=admin'
-      - 'DB_PASS=password'
-
-  postgresms:
-      image: postgres:9.6
-      ports:
-         - 5433:5432
-      environment:
-         - 'POSTGRES_DB=petstorems'
-         - 'POSTGRES_USER=admin'
-         - 'POSTGRES_PASSWORD=password'
-
-  petstorems:
-      build:
-         context: ./
-         dockerfile: Dockerfile
-      depends_on:
-         - postgresms
-      ports:
-         - 8081:8081
-         - 9991:9991
-      environment:
-         - 'DB_URL=jdbc:postgresql://postgresms:5433/petstorems?ApplicationName=applicationPetstorems'
-         - 'DB_HOST=postgresms'
-         - 'DB_PORT=5433'
-         - 'DB_NAME=petstorems'
-         - 'DB_USER=admin'
-         - 'DB_PASS=password'
+      - 'DB_PASS=passwOrd'
