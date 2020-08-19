@@ -1,0 +1,5 @@
+FROM postgres:9.6 AS build
+ENV POSTGRES_DB categoryMS
+ENV POSTGRES_USER admin
+ENV POSTGRES_PASSWORD password
+EXPOSE 5432
