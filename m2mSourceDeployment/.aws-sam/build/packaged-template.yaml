@@ -145,7 +145,10 @@ Resources:
       - IpProtocol: tcp
         FromPort: '22'
         ToPort: '22'
-        CidrIp: 0.0.0.0/0
+        SourceSecurityGroupId:
+          Fn::GetAtt:
+          - petStoreSG
+          - GroupId
       Tags:
       - Key: Environment
         Value: source
@@ -159,9 +162,12 @@ Resources:
       IpProtocol: tcp
       ToPort: 5432
       FromPort: 5432
-      CidrIp: 0.0.0.0/0
       GroupId:
         Ref: petStoreDBSG
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+        - petStoreSG
+        - GroupId
   m2mSourceGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -437,7 +443,7 @@ Resources:
         Fn::GetAtt:
         - SSHKeyGeneratorRole
         - Arn
-      CodeUri: s3://m2m-sam-artifacts-us-west-2/e28eb521027d8aaf7fcadab65746f8b0
+      CodeUri: s3://petstore-app-bucket/e28eb521027d8aaf7fcadab65746f8b0
   SSHKeyGeneratorExecution:
     Type: Custom::SSHKeyGenerator
     DependsOn:
@@ -524,7 +530,7 @@ Resources:
     Properties:
       Name:
         Ref: AWS::StackName
-      Description: Cloud-based IDE for AWS Modernization Workshop
+      Description: Cloud-based IDE for AWS M2M Workshop
       AutomaticStopTimeMinutes:
         Ref: C9StopTime
       InstanceType:

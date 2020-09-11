@@ -1,3 +1,6 @@
+cd <app>
+
+
 * Create Docker Image
 
 docker build -t productmsapp-image .
