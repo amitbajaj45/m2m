@@ -163,7 +163,8 @@ Resources:
     DependsOn: DBALB
     Properties:
       HealthCheckProtocol: TCP
-      HealthyThresholdCount: 3
+      HealthyThresholdCount: 7
+      UnhealthyThresholdCount: 7
       Name: DBTG
       Port: 5432
       Protocol: TCP

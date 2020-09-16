@@ -1,6 +1,38 @@
-cd <app>
+On cloud9
+
+git clone https://github.com/amitbajaj45/m2m.git
+cd m2m/productMS/productMSApp
 
 
+region=$(aws configure get region)
+accountid=$(aws sts get-caller-identity --query Account --output text)
+
+* Push the iMage to repo
+
+aws ecr get-login-password \
+  --region $region | docker login \
+  --username AWS \
+  --password-stdin $accountid.dkr.ecr.$region.amazonaws.com
+  
+  
+aws ecr create-repository --repository-name m2m/productmsapp-image
+
+  
+
+docker tag productmsapp-image $accountid.dkr.ecr.$region.amazonaws.com/m2m/productmsapp-image:latest
+
+docker push $accountid.dkr.ecr.$region.amazonaws.com/m2m/productmsapp-image:latest
+
+  
+
+
+
+
+
+
+
+
+from local machine ----
 * Create Docker Image
 
 docker build -t productmsapp-image .
