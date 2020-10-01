@@ -289,10 +289,10 @@ Resources:
 #      FromPort: '5432'
 #      ToPort: '5432'
 #      CidrIp: 0.0.0.0/0
-  AppALB:
+  CategoryALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: AppALB
+      Name: CategoryALB
       Scheme: internet-facing
       Type: application
       Subnets: !Ref 'SubnetId'
@@ -324,7 +324,7 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref 'AppTG'
-      LoadBalancerArn: !Ref 'AppALB'
+      LoadBalancerArn: !Ref 'CategoryALB'
       Port: '8080'
       Protocol: HTTP
 #  DBDBListenerRule:
@@ -338,7 +338,7 @@ Resources:
 #      Priority: 1
   AppTG:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    DependsOn: AppALB
+    DependsOn: CategoryALB
     Properties:
       HealthCheckIntervalSeconds: 150
       HealthCheckPath: "/"
@@ -357,4 +357,4 @@ Resources:
 Outputs:
   AppLB:
     Description: Your category Micro Service DNS URL
-    Value: !Join ['', [!GetAtt [AppALB, DNSName]]]
+    Value: !Join ['', [!GetAtt [CategoryALB, DNSName]]]
