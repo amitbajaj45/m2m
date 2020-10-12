@@ -12,6 +12,8 @@ aws ecr get-login-password
 
 aws ecr create-repository --repository-name m2m/categorymsapp-image
 
+docker build -t categorymsapp-image .
+
 docker tag categorymsapp-image $accountid.dkr.ecr.$region.amazonaws.com/m2m/categorymsapp-image:latest
 
 docker push $accountid.dkr.ecr.$region.amazonaws.com/m2m/categorymsapp-image:latest
