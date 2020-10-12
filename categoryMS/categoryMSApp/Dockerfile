@@ -48,12 +48,12 @@ COPY ./docker-entrypoint.sh /opt/jboss/docker-entrypoint.sh
 # expose the application port and the management port
 EXPOSE 8080 9990
 
-ENV DB_URL jdbc:postgresql://categoryMicroDBELB-521e8572997f3ec3.elb.us-east-1.amazonaws.com:5432/categoryMS?ApplicationName=categoryMicroService
-ENV DB_HOST categoryMicroDBELB-521e8572997f3ec3.elb.us-east-1.amazonaws.com
-ENV DB_PORT 5432
-ENV DB_NAME categoryMS
-ENV DB_USER admin
-ENV DB_PASS password
+#ENV DB_URL jdbc:postgresql://categoryMicroDBELB-521e8572997f3ec3.elb.us-east-1.amazonaws.com:5432/categoryMS?ApplicationName=categoryMicroService
+#ENV DB_HOST categoryMicroDBELB-521e8572997f3ec3.elb.us-east-1.amazonaws.com
+#ENV DB_PORT 5432
+#ENV DB_NAME categoryMS
+#ENV DB_USER admin
+#ENV DB_PASS password
 
 # run the application
 ENTRYPOINT [ "/opt/jboss/docker-entrypoint.sh" ]
