@@ -19,7 +19,7 @@ docker tag categorymsdb-ubuntu-image $accountid.dkr.ecr.$region.amazonaws.com/m2
 
 docker push $accountid.dkr.ecr.$region.amazonaws.com/m2m/productmsdb-ubuntu-image:latest
 
-aws s3api create-bucket --bucket productmsapp-artifacts-${accountid} --create-bucket-configuration LocationConstraint=${region} aws s3 cp categoryms-db.yaml s3://categorymsapp-artifacts-${accountid}/
+aws s3api create-bucket --bucket categorymsapp-artifacts-${accountid} --create-bucket-configuration LocationConstraint=${region} aws s3 cp categoryms-db.yaml s3://categorymsapp-artifacts-${accountid}/
 
 Go to s3 bucket and copy the object URL for example - https://categorymsapp-artifacts-646336443392.s3-us-west-2.amazonaws.com/categoryms-db.yaml
 
