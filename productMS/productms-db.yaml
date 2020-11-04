@@ -18,7 +18,7 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Select at two subnets in your selected VPC.
 Resources:
-  DBSecurityGroup:
+  ProductDBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Limits security group ingress and egress traffic for the WebSphere MQ instance
@@ -28,7 +28,7 @@ Resources:
           FromPort: 5432
           ToPort: 5432
           CidrIp: 0.0.0.0/0
-  DBTaskExecutionRole:
+  ProductDBTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -79,7 +79,7 @@ Resources:
 
   productMSDBECSService:
     Type: AWS::ECS::Service
-    DependsOn: DBListener
+    DependsOn: ProductDBListener
     Properties:
       ServiceName: product-ms-db
       Cluster: !Ref productMSDBECSCluster
@@ -92,12 +92,12 @@ Resources:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
           SecurityGroups:
-            - !Ref DBSecurityGroup
+            - !Ref ProductDBSecurityGroup
           Subnets: !Ref 'SubnetId'
       TaskDefinition: !Ref productMSDBECSTaskDefinition
       LoadBalancers:
         - TargetGroupArn:
-            Ref: DBTG
+            Ref: ProductDBTG
           ContainerPort: 5432
           ContainerName: product-ms-db
 #  EcsSecurityGroup:
@@ -113,14 +113,14 @@ Resources:
 #      FromPort: '5432'
 #      ToPort: '5432'
 #      CidrIp: 0.0.0.0/0
-  DBALB:
+  ProductDBALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: DBALB
+      Name: ProductDBALB
       Scheme: internet-facing
       Type: network
       Subnets: !Ref 'SubnetId'
-  DBServiceRole:
+  ProductDBServiceRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -139,39 +139,39 @@ Resources:
                          'elasticloadbalancing:Describe*', 'elasticloadbalancing:RegisterInstancesWithLoadBalancer',
                          'elasticloadbalancing:RegisterTargets', 'ec2:Describe*', 'ec2:AuthorizeSecurityGroupIngress']
                 Resource: '*'
-  DBListener:
+  ProductDBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    DependsOn: DBServiceRole
+    DependsOn: ProductDBServiceRole
     Properties:
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref 'DBTG'
-      LoadBalancerArn: !Ref 'DBALB'
+          TargetGroupArn: !Ref 'ProductDBTG'
+      LoadBalancerArn: !Ref 'ProductDBALB'
       Port: '5432'
       Protocol: TCP
-#  DBDBListenerRule:
+#  DBProductDBListenerRule:
 #    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-#    DependsOn: DBListener
+#    DependsOn: ProductDBListener
 #    Properties:
 #      Actions:
 #        - Type: forward
-#          TargetGroupArn: !Ref 'DBTG'
-#      ListenerArn: !Ref 'DBListener'
+#          TargetGroupArn: !Ref 'ProductDBTG'
+#      ListenerArn: !Ref 'ProductDBListener'
 #      Priority: 1
-  DBTG:
+  ProductDBTG:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    DependsOn: DBALB
+    DependsOn: ProductDBALB
     Properties:
       HealthCheckProtocol: TCP
       HealthyThresholdCount: 7
       UnhealthyThresholdCount: 7
-      Name: DBTG
+      Name: ProductDBTG
       Port: 5432
       Protocol: TCP
       VpcId: !Ref VPC
       TargetType: ip
 ##################################################
-  AppSecurityGroup:
+  ProductAppSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Limits security group ingress and egress traffic for the product Micro service App
@@ -181,17 +181,17 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-  AppSecurityIngress1:
+  ProductAppSecurityIngress1:
     Type: AWS::EC2::SecurityGroupIngress
     DependsOn:
-      - AppSecurityGroup
+      - ProductAppSecurityGroup
     Properties:
       IpProtocol: tcp
       ToPort: 8080
       FromPort: 8080
       CidrIp: 0.0.0.0/0
-      GroupId: !Ref AppSecurityGroup
-  AppTaskExecutionRole:
+      GroupId: !Ref ProductAppSecurityGroup
+  ProductAppTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -210,7 +210,7 @@ Resources:
 
   productMSAppECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
-    DependsOn: DBALB
+    DependsOn: ProductDBALB
     Properties:
       Family: product-ms-app-task
       Cpu: 2048
@@ -218,7 +218,7 @@ Resources:
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
-      ExecutionRoleArn: !Ref AppTaskExecutionRole
+      ExecutionRoleArn: !Ref ProductAppTaskExecutionRole
       ContainerDefinitions:
         - Name: product-ms-app
           Cpu: 2048
@@ -228,9 +228,9 @@ Resources:
             - ContainerPort: 8080
           Environment:
             - Name: DB_URL
-              Value: !Sub 'jdbc:postgresql://${DBALB.DNSName}:5432/${DBNAME}?ApplicationName=productMicroService'
+              Value: !Sub 'jdbc:postgresql://${ProductDBALB.DNSName}:5432/${DBNAME}?ApplicationName=productMicroService'
             - Name: DB_HOST
-              Value: !Join ['', [!GetAtt [DBALB, DNSName]]]
+              Value: !Join ['', [!GetAtt [ProductDBALB, DNSName]]]
             - Name: DB_PORT
               Value: 5432
             - Name: DB_NAME
@@ -254,7 +254,7 @@ Resources:
   productMSAppECSService:
     Type: AWS::ECS::Service
     DependsOn:
-      - AppListener
+      - ProductAppListener
       - productMSDBECSService
     Properties:
       ServiceName: product-ms-app
@@ -268,12 +268,12 @@ Resources:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
           SecurityGroups:
-            - !Ref AppSecurityGroup
+            - !Ref ProductAppSecurityGroup
           Subnets: !Ref 'SubnetId'
       TaskDefinition: !Ref productMSAppECSTaskDefinition
       LoadBalancers:
         - TargetGroupArn:
-            Ref: AppTG
+            Ref: ProductAppTG
           ContainerPort: 8080
           ContainerName: product-ms-app
 #  EcsSecurityGroup:
@@ -289,16 +289,16 @@ Resources:
 #      FromPort: '5432'
 #      ToPort: '5432'
 #      CidrIp: 0.0.0.0/0
-  AppALB:
+  ProductAppALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: AppALB
+      Name: ProductAppALB
       Scheme: internet-facing
       Type: application
       Subnets: !Ref 'SubnetId'
       SecurityGroups:
-        - !Ref AppSecurityGroup
-  AppServiceRole:
+        - !Ref ProductAppSecurityGroup
+  ProductAppServiceRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -317,35 +317,35 @@ Resources:
                          'elasticloadbalancing:Describe*', 'elasticloadbalancing:RegisterInstancesWithLoadBalancer',
                          'elasticloadbalancing:RegisterTargets', 'ec2:Describe*', 'ec2:AuthorizeSecurityGroupIngress']
                 Resource: '*'
-  AppListener:
+  ProductAppListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    DependsOn: AppServiceRole
+    DependsOn: ProductAppServiceRole
     Properties:
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref 'AppTG'
-      LoadBalancerArn: !Ref 'AppALB'
+          TargetGroupArn: !Ref 'ProductAppTG'
+      LoadBalancerArn: !Ref 'ProductAppALB'
       Port: '8080'
       Protocol: HTTP
-#  DBDBListenerRule:
+#  DBProductDBListenerRule:
 #    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-#    DependsOn: DBListener
+#    DependsOn: ProductDBListener
 #    Properties:
 #      Actions:
 #        - Type: forward
-#          TargetGroupArn: !Ref 'DBTG'
-#      ListenerArn: !Ref 'DBListener'
+#          TargetGroupArn: !Ref 'ProductDBTG'
+#      ListenerArn: !Ref 'ProductDBListener'
 #      Priority: 1
-  AppTG:
+  ProductAppTG:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    DependsOn: AppALB
+    DependsOn: ProductAppALB
     Properties:
       HealthCheckIntervalSeconds: 150
       HealthCheckPath: "/"
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 120
       HealthyThresholdCount: 2
-      Name: AppTG
+      Name: ProductAppTG
       Port: 8080
       Protocol: HTTP
       UnhealthyThresholdCount: 5
@@ -355,6 +355,6 @@ Resources:
 
 
 Outputs:
-  AppLB:
+  ProductAppLB:
     Description: Your product Micro Service DNS URL
-    Value: !Join ['', [!GetAtt [AppALB, DNSName]]]
+    Value: !Join ['', [!GetAtt [ProductAppALB, DNSName]]]
